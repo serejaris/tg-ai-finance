@@ -1,5 +1,6 @@
 .env
 expenses.db
+bot.log
 __pycache__/
 *.pyc
 *.pyo
