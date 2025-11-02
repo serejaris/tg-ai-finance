@@ -1,7 +1,7 @@
-from telegram import Update, BotCommand
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from config import TELEGRAM_BOT_TOKEN
-from storage import init_db, add_expense, get_today_total, get_month_total
+from storage import init_db, add_expense, get_today_total, get_month_total, convert_currency, get_user_settings, set_display_currency, set_exchange_rate
 from openai_client import transcribe_audio, extract_text_from_image, parse_expense_from_text
 from expense_parser import extract_expense, extract_expense_with_category
 import base64
@@ -54,6 +54,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Команды:\n"
         "/today - показать сумму расходов за сегодня\n"
         "/month - показать сумму расходов за текущий месяц\n"
+        "/settings - настройки валюты отображения\n"
+        "/setrate - установить курс валюты\n"
         "/help - эта справка\n\n"
         "Также можно просто отправлять сообщения с расходами:\n"
         "- Текстовое сообщение\n"
@@ -75,16 +77,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if amount > 0:
             add_expense(amount, currency, category)
-            today_totals = get_today_total()
+            today_totals = get_today_total(user_id)
             
             currency_name = get_currency_name(currency)
-            logger.info(f"Расход {amount:.2f} {currency} ({category}) сохранен для пользователя {user_id}")
+            settings = get_user_settings(user_id)
+            display_currency = settings['display_currency']
+            display_currency_name = get_currency_name(display_currency)
             
-            summary_lines = [f"Расход {amount:.2f} {currency_name} ({category}) сохранен."]
+            if currency == display_currency:
+                summary_lines = [f"Расход {amount:.2f} {currency_name} в категории {category} сохранен."]
+            else:
+                converted_amount = convert_currency(amount, currency, user_id)
+                summary_lines = [f"Расход {amount:.2f} {currency_name} ({converted_amount:.2f} {display_currency_name}) в категории {category} сохранен."]
+            
             if today_totals:
-                summary_lines.append("\nВсего за сегодня:")
-                for curr, total in today_totals.items():
-                    summary_lines.append(f"{total:.2f} {get_currency_name(curr)}")
+                total_display = sum(today_totals.values())
+                summary_lines.append(f"\nВсего за сегодня: {total_display:.2f} {display_currency_name}")
             
             await update.message.reply_text("\n".join(summary_lines))
         else:
@@ -112,19 +120,28 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if amount > 0:
             add_expense(amount, currency, category)
-            today_totals = get_today_total()
+            today_totals = get_today_total(user_id)
             
             currency_name = get_currency_name(currency)
+            settings = get_user_settings(user_id)
+            display_currency = settings['display_currency']
+            display_currency_name = get_currency_name(display_currency)
             logger.info(f"Расход {amount:.2f} {currency} ({category}) сохранен для пользователя {user_id} из голосового сообщения")
             
-            summary_lines = [
-                f"Распознано: {transcribed_text}",
-                f"Расход {amount:.2f} {currency_name} ({category}) сохранен."
-            ]
+            if currency == display_currency:
+                summary_lines = [
+                    f"Распознано: {transcribed_text}",
+                    f"Расход {amount:.2f} {currency_name} в категории {category} сохранен."
+                ]
+            else:
+                converted_amount = convert_currency(amount, currency, user_id)
+                summary_lines = [
+                    f"Распознано: {transcribed_text}",
+                    f"Расход {amount:.2f} {currency_name} ({converted_amount:.2f} {display_currency_name}) в категории {category} сохранен."
+                ]
             if today_totals:
-                summary_lines.append("\nВсего за сегодня:")
-                for curr, total in today_totals.items():
-                    summary_lines.append(f"{total:.2f} {get_currency_name(curr)}")
+                total_display = sum(today_totals.values())
+                summary_lines.append(f"\nВсего за сегодня: {total_display:.2f} {display_currency_name}")
             
             await update.message.reply_text("\n".join(summary_lines))
         else:
@@ -153,19 +170,28 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if amount > 0:
             add_expense(amount, currency, category)
-            today_totals = get_today_total()
+            today_totals = get_today_total(user_id)
             
             currency_name = get_currency_name(currency)
+            settings = get_user_settings(user_id)
+            display_currency = settings['display_currency']
+            display_currency_name = get_currency_name(display_currency)
             logger.info(f"Расход {amount:.2f} {currency} ({category}) сохранен для пользователя {user_id} из фото")
             
-            summary_lines = [
-                f"Прочитано с изображения: {extracted_text}",
-                f"Расход {amount:.2f} {currency_name} ({category}) сохранен."
-            ]
+            if currency == display_currency:
+                summary_lines = [
+                    f"Прочитано с изображения: {extracted_text}",
+                    f"Расход {amount:.2f} {currency_name} в категории {category} сохранен."
+                ]
+            else:
+                converted_amount = convert_currency(amount, currency, user_id)
+                summary_lines = [
+                    f"Прочитано с изображения: {extracted_text}",
+                    f"Расход {amount:.2f} {currency_name} ({converted_amount:.2f} {display_currency_name}) в категории {category} сохранен."
+                ]
             if today_totals:
-                summary_lines.append("\nВсего за сегодня:")
-                for curr, total in today_totals.items():
-                    summary_lines.append(f"{total:.2f} {get_currency_name(curr)}")
+                total_display = sum(today_totals.values())
+                summary_lines.append(f"\nВсего за сегодня: {total_display:.2f} {display_currency_name}")
             
             await update.message.reply_text("\n".join(summary_lines))
         else:
@@ -180,40 +206,151 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def today_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    totals = get_today_total()
+    totals = get_today_total(user_id)
     logger.info(f"Команда /today от пользователя {user_id}")
+    
+    settings = get_user_settings(user_id)
+    display_currency = settings['display_currency']
+    display_currency_name = get_currency_name(display_currency)
     
     if totals:
         lines = ["Расходы за сегодня:"]
-        for currency, total in totals.items():
-            lines.append(f"{total:.2f} {get_currency_name(currency)}")
+        category_names = {
+            'еда': 'Еда',
+            'транспорт': 'Транспорт',
+            'развлечения': 'Развлечения',
+            'коммунальные': 'Коммунальные',
+            'одежда': 'Одежда',
+            'здоровье': 'Здоровье',
+            'другие': 'Другие'
+        }
+        for category, total in sorted(totals.items()):
+            cat_name = category_names.get(category, category.capitalize())
+            lines.append(f"{cat_name}: {total:.2f} {display_currency_name}")
         message = "\n".join(lines)
     else:
-        message = "Расходы за сегодня: 0 руб."
+        message = f"Расходы за сегодня: 0 {display_currency_name}"
     
     await update.message.reply_text(message)
 
 async def month_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    totals = get_month_total()
+    totals = get_month_total(user_id)
     logger.info(f"Команда /month от пользователя {user_id}")
+    
+    settings = get_user_settings(user_id)
+    display_currency = settings['display_currency']
+    display_currency_name = get_currency_name(display_currency)
     
     if totals:
         lines = ["Расходы за текущий месяц:"]
-        for currency, total in totals.items():
-            lines.append(f"{total:.2f} {get_currency_name(currency)}")
+        category_names = {
+            'еда': 'Еда',
+            'транспорт': 'Транспорт',
+            'развлечения': 'Развлечения',
+            'коммунальные': 'Коммунальные',
+            'одежда': 'Одежда',
+            'здоровье': 'Здоровье',
+            'другие': 'Другие'
+        }
+        for category, total in sorted(totals.items()):
+            cat_name = category_names.get(category, category.capitalize())
+            lines.append(f"{cat_name}: {total:.2f} {display_currency_name}")
         message = "\n".join(lines)
     else:
-        message = "Расходы за текущий месяц: 0 руб."
+        message = f"Расходы за текущий месяц: 0 {display_currency_name}"
     
     await update.message.reply_text(message)
+
+async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    logger.info(f"Команда /settings от пользователя {user_id}")
+    
+    settings = get_user_settings(user_id)
+    display_currency = settings['display_currency']
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("ARS (песо)" + (" ✓" if display_currency == 'ARS' else ""), callback_data="currency_ARS"),
+            InlineKeyboardButton("USD (долл.)" + (" ✓" if display_currency == 'USD' else ""), callback_data="currency_USD"),
+            InlineKeyboardButton("RUB (руб.)" + (" ✓" if display_currency == 'RUB' else ""), callback_data="currency_RUB")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    settings_text = f"Ваша валюта отображения: {get_currency_name(display_currency)}\n\n"
+    settings_text += "Выберите валюту для отображения:\n\n"
+    settings_text += "Для установки курсов используйте команду /setrate\n"
+    settings_text += "Формат: /setrate USD 1000 (1 USD = 1000 ARS)"
+    
+    await update.message.reply_text(settings_text, reply_markup=reply_markup)
+
+async def currency_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    currency = query.data.split('_')[1]
+    
+    logger.info(f"Изменение валюты отображения для пользователя {user_id} на {currency}")
+    set_display_currency(user_id, currency)
+    
+    settings = get_user_settings(user_id)
+    display_currency = settings['display_currency']
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("ARS (песо)" + (" ✓" if display_currency == 'ARS' else ""), callback_data="currency_ARS"),
+            InlineKeyboardButton("USD (долл.)" + (" ✓" if display_currency == 'USD' else ""), callback_data="currency_USD"),
+            InlineKeyboardButton("RUB (руб.)" + (" ✓" if display_currency == 'RUB' else ""), callback_data="currency_RUB")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    settings_text = f"Ваша валюта отображения: {get_currency_name(display_currency)}\n\n"
+    settings_text += "Выберите валюту для отображения:\n\n"
+    settings_text += "Для установки курсов используйте команду /setrate\n"
+    settings_text += "Формат: /setrate USD 1000 (1 USD = 1000 ARS)"
+    
+    await query.edit_message_text(settings_text, reply_markup=reply_markup)
+
+async def setrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    logger.info(f"Команда /setrate от пользователя {user_id}")
+    
+    if not context.args or len(context.args) != 2:
+        await update.message.reply_text(
+            "Неправильный формат команды.\n\n"
+            "Используйте: /setrate <CURRENCY> <RATE>\n\n"
+            "Примеры:\n"
+            "/setrate USD 1000\n"
+            "/setrate RUB 10"
+        )
+        return
+    
+    currency = context.args[0].upper()
+    try:
+        rate = float(context.args[1])
+    except ValueError:
+        await update.message.reply_text("Курс должен быть числом.")
+        return
+    
+    if currency not in ['USD', 'RUB']:
+        await update.message.reply_text("Поддерживаются только USD и RUB.")
+        return
+    
+    set_exchange_rate(user_id, currency, 'ARS', rate)
+    currency_name = get_currency_name(currency)
+    await update.message.reply_text(f"Курс установлен: 1 {currency_name} = {rate:.2f} песо")
 
 async def set_bot_commands(application: Application):
     commands = [
         BotCommand("start", "Начать работу с ботом"),
         BotCommand("help", "Показать справку по командам"),
         BotCommand("today", "Показать расходы за сегодня"),
-        BotCommand("month", "Показать расходы за текущий месяц")
+        BotCommand("month", "Показать расходы за текущий месяц"),
+        BotCommand("settings", "Настройки валюты отображения"),
+        BotCommand("setrate", "Установить курс валюты")
     ]
     await application.bot.set_my_commands(commands)
     logger.info("Меню команд установлено")
@@ -229,6 +366,9 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("today", today_summary))
     application.add_handler(CommandHandler("month", month_summary))
+    application.add_handler(CommandHandler("settings", settings_command))
+    application.add_handler(CommandHandler("setrate", setrate_command))
+    application.add_handler(CallbackQueryHandler(currency_callback, pattern="currency_"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_handler(MessageHandler(filters.VOICE, handle_voice))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
