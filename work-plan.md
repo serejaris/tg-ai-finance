@@ -136,6 +136,16 @@
 - ✅ Обновлено меню команд бота: добавлены /settings и /setrate
 - ✅ Обновлена команда /help для отображения новых команд
 
+### 2025-11-02 01:11 - Исправление ошибки деплоя на Railway
+**Промпт:** задеплоил бота на railway, но ошибка - AttributeError: 'Updater' object has no attribute '_Updater__polling_cleanup_cb'
+**Проблема:**
+- Railway использует Python 3.13 по умолчанию
+- python-telegram-bot 20.7 несовместим с Python 3.13
+- Класс Updater использует __slots__ и не может установить приватный атрибут в Python 3.13
+**Сделано:**
+- ✅ Создан файл runtime.txt с указанием Python 3.12 для Railway
+- ✅ Обновлена версия python-telegram-bot с 20.7 до 21.9 в requirements.txt для лучшей совместимости
+
 ## Задачи
 
 - [x] Создать структуру проекта
