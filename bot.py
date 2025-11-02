@@ -76,25 +76,36 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount, currency, category = extract_expense_with_category(text)
         
         if amount > 0:
-            add_expense(amount, currency, category)
-            today_totals = get_today_total(user_id)
-            
             currency_name = get_currency_name(currency)
             settings = get_user_settings(user_id)
             display_currency = settings['display_currency']
             display_currency_name = get_currency_name(display_currency)
             
             if currency == display_currency:
-                summary_lines = [f"Расход {amount:.2f} {currency_name} в категории {category} сохранен."]
+                preview_text = f"Расход {amount:.2f} {currency_name} в категории {category}"
             else:
                 converted_amount = convert_currency(amount, currency, user_id)
-                summary_lines = [f"Расход {amount:.2f} {currency_name} ({converted_amount:.2f} {display_currency_name}) в категории {category} сохранен."]
+                preview_text = f"Расход {amount:.2f} {currency_name} ({converted_amount:.2f} {display_currency_name}) в категории {category}"
             
-            if today_totals:
-                total_display = sum(today_totals.values())
-                summary_lines.append(f"\nВсего за сегодня: {total_display:.2f} {display_currency_name}")
+            context.user_data['pending_expense'] = {
+                'amount': amount,
+                'currency': currency,
+                'category': category,
+                'source_type': 'text'
+            }
             
-            await update.message.reply_text("\n".join(summary_lines))
+            keyboard = [
+                [
+                    InlineKeyboardButton("Подтвердить", callback_data="confirm_expense"),
+                    InlineKeyboardButton("Отменить", callback_data="cancel_expense")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"{preview_text}\n\nПодтвердите сохранение расхода:",
+                reply_markup=reply_markup
+            )
         else:
             logger.warning(f"Не удалось извлечь сумму из сообщения пользователя {user_id}: {text[:100]}")
             await update.message.reply_text(
@@ -119,31 +130,37 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount, currency, category = extract_expense_with_category(transcribed_text)
         
         if amount > 0:
-            add_expense(amount, currency, category)
-            today_totals = get_today_total(user_id)
-            
             currency_name = get_currency_name(currency)
             settings = get_user_settings(user_id)
             display_currency = settings['display_currency']
             display_currency_name = get_currency_name(display_currency)
-            logger.info(f"Расход {amount:.2f} {currency} ({category}) сохранен для пользователя {user_id} из голосового сообщения")
             
             if currency == display_currency:
-                summary_lines = [
-                    f"Распознано: {transcribed_text}",
-                    f"Расход {amount:.2f} {currency_name} в категории {category} сохранен."
-                ]
+                preview_text = f"Распознано: {transcribed_text}\nРасход {amount:.2f} {currency_name} в категории {category}"
             else:
                 converted_amount = convert_currency(amount, currency, user_id)
-                summary_lines = [
-                    f"Распознано: {transcribed_text}",
-                    f"Расход {amount:.2f} {currency_name} ({converted_amount:.2f} {display_currency_name}) в категории {category} сохранен."
-                ]
-            if today_totals:
-                total_display = sum(today_totals.values())
-                summary_lines.append(f"\nВсего за сегодня: {total_display:.2f} {display_currency_name}")
+                preview_text = f"Распознано: {transcribed_text}\nРасход {amount:.2f} {currency_name} ({converted_amount:.2f} {display_currency_name}) в категории {category}"
             
-            await update.message.reply_text("\n".join(summary_lines))
+            context.user_data['pending_expense'] = {
+                'amount': amount,
+                'currency': currency,
+                'category': category,
+                'source_type': 'voice',
+                'transcribed_text': transcribed_text
+            }
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("Подтвердить", callback_data="confirm_expense"),
+                    InlineKeyboardButton("Отменить", callback_data="cancel_expense")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"{preview_text}\n\nПодтвердите сохранение расхода:",
+                reply_markup=reply_markup
+            )
         else:
             logger.warning(f"Не удалось извлечь сумму из транскрипции пользователя {user_id}: {transcribed_text[:100]}")
             await update.message.reply_text(
@@ -169,31 +186,37 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount, currency, category = extract_expense_with_category(extracted_text)
         
         if amount > 0:
-            add_expense(amount, currency, category)
-            today_totals = get_today_total(user_id)
-            
             currency_name = get_currency_name(currency)
             settings = get_user_settings(user_id)
             display_currency = settings['display_currency']
             display_currency_name = get_currency_name(display_currency)
-            logger.info(f"Расход {amount:.2f} {currency} ({category}) сохранен для пользователя {user_id} из фото")
             
             if currency == display_currency:
-                summary_lines = [
-                    f"Прочитано с изображения: {extracted_text}",
-                    f"Расход {amount:.2f} {currency_name} в категории {category} сохранен."
-                ]
+                preview_text = f"Прочитано с изображения: {extracted_text}\nРасход {amount:.2f} {currency_name} в категории {category}"
             else:
                 converted_amount = convert_currency(amount, currency, user_id)
-                summary_lines = [
-                    f"Прочитано с изображения: {extracted_text}",
-                    f"Расход {amount:.2f} {currency_name} ({converted_amount:.2f} {display_currency_name}) в категории {category} сохранен."
-                ]
-            if today_totals:
-                total_display = sum(today_totals.values())
-                summary_lines.append(f"\nВсего за сегодня: {total_display:.2f} {display_currency_name}")
+                preview_text = f"Прочитано с изображения: {extracted_text}\nРасход {amount:.2f} {currency_name} ({converted_amount:.2f} {display_currency_name}) в категории {category}"
             
-            await update.message.reply_text("\n".join(summary_lines))
+            context.user_data['pending_expense'] = {
+                'amount': amount,
+                'currency': currency,
+                'category': category,
+                'source_type': 'photo',
+                'extracted_text': extracted_text
+            }
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("Подтвердить", callback_data="confirm_expense"),
+                    InlineKeyboardButton("Отменить", callback_data="cancel_expense")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"{preview_text}\n\nПодтвердите сохранение расхода:",
+                reply_markup=reply_markup
+            )
         else:
             logger.warning(f"Не удалось извлечь сумму из текста изображения пользователя {user_id}: {extracted_text[:100]}")
             await update.message.reply_text(
@@ -285,6 +308,53 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(settings_text, reply_markup=reply_markup)
 
+async def expense_confirmation_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    if 'pending_expense' not in context.user_data:
+        await query.answer("Расход не найден. Попробуйте снова.")
+        await query.edit_message_text("Расход не найден. Попробуйте отправить расход снова.")
+        return
+    
+    pending = context.user_data['pending_expense']
+    
+    if query.data == "confirm_expense":
+        await query.answer()
+        
+        amount = pending['amount']
+        currency = pending['currency']
+        category = pending['category']
+        
+        add_expense(amount, currency, category)
+        today_totals = get_today_total(user_id)
+        
+        currency_name = get_currency_name(currency)
+        settings = get_user_settings(user_id)
+        display_currency = settings['display_currency']
+        display_currency_name = get_currency_name(display_currency)
+        
+        if currency == display_currency:
+            summary_lines = [f"Расход {amount:.2f} {currency_name} в категории {category} сохранен."]
+        else:
+            converted_amount = convert_currency(amount, currency, user_id)
+            summary_lines = [f"Расход {amount:.2f} {currency_name} ({converted_amount:.2f} {display_currency_name}) в категории {category} сохранен."]
+        
+        if today_totals:
+            total_display = sum(today_totals.values())
+            summary_lines.append(f"\nВсего за сегодня: {total_display:.2f} {display_currency_name}")
+        
+        del context.user_data['pending_expense']
+        
+        await query.edit_message_text("\n".join(summary_lines))
+        logger.info(f"Расход {amount:.2f} {currency} ({category}) сохранен для пользователя {user_id}")
+        
+    elif query.data == "cancel_expense":
+        await query.answer("Расход отменен")
+        del context.user_data['pending_expense']
+        await query.edit_message_text("Сохранение расхода отменено.")
+        logger.info(f"Сохранение расхода отменено пользователем {user_id}")
+
 async def currency_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -368,6 +438,7 @@ def main():
     application.add_handler(CommandHandler("month", month_summary))
     application.add_handler(CommandHandler("settings", settings_command))
     application.add_handler(CommandHandler("setrate", setrate_command))
+    application.add_handler(CallbackQueryHandler(expense_confirmation_callback, pattern="^(confirm_expense|cancel_expense)$"))
     application.add_handler(CallbackQueryHandler(currency_callback, pattern="currency_"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_handler(MessageHandler(filters.VOICE, handle_voice))

@@ -94,8 +94,8 @@ def parse_expense_from_text(text: str) -> tuple[float, str]:
 Понимай словесные формы чисел: "15 тысяч" = 15000, "тысяч" = умножить на 1000, "тыс" = умножить на 1000.
 Верни результат в формате: СУММА|ВАЛЮТА
 Например: 15000|ARS или 500|руб или 100|USD
-Если валюты нет в тексте, используй "руб".
-Если суммы нет, верни 0|руб.
+Если валюты нет в тексте, используй "ARS" (песо).
+Если суммы нет, верни 0|ARS.
 
 Текст: {text}
 Результат:"""
@@ -104,7 +104,7 @@ def parse_expense_from_text(text: str) -> tuple[float, str]:
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "Ты помощник для извлечения сумм расходов из текста. Извлекай сумму и валюту. Всегда возвращай в формате: СУММА|ВАЛЮТА (например: 15000|ARS или 500|руб)"},
+                {"role": "system", "content": "Ты помощник для извлечения сумм расходов из текста. Извлекай сумму и валюту. Всегда возвращай в формате: СУММА|ВАЛЮТА (например: 15000|ARS или 500|руб). Если валюта не указана, используй ARS (песо) по умолчанию."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=50,
@@ -129,12 +129,12 @@ def parse_expense_from_text(text: str) -> tuple[float, str]:
                 return (max(0, amount), currency)
             else:
                 amount = float(result)
-                logger.warning(f"Валюту не удалось извлечь, используется RUB по умолчанию")
-                return (max(0, amount), 'RUB')
+                logger.warning(f"Валюту не удалось извлечь, используется ARS по умолчанию")
+                return (max(0, amount), 'ARS')
         except ValueError:
             logger.warning(f"Не удалось преобразовать результат: {result}")
-            return (0.0, 'RUB')
+            return (0.0, 'ARS')
     except Exception as e:
         logger.error(f"Ошибка при парсинге суммы из текста: {str(e)}", exc_info=True)
-        return (0.0, 'RUB')
+        return (0.0, 'ARS')
 
