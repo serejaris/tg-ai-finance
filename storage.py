@@ -1,12 +1,14 @@
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from datetime import date, datetime
 from typing import Optional
 import logging
 import requests
+import os
+
+from config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
-
-DB_PATH = "expenses.db"
 
 _exchange_rates = None
 
@@ -111,9 +113,12 @@ def convert_currency(amount: float, from_currency: str, user_id: int, to_currenc
     
     return ars_amount
 
+def get_connection():
+    return psycopg2.connect(DATABASE_URL)
+
 def init_user_settings_table():
     logger.info("Инициализация таблицы настроек пользователей")
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_settings (
@@ -129,19 +134,26 @@ def init_user_settings_table():
 
 def init_db():
     logger.info("Инициализация базы данных")
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             date DATE NOT NULL,
             amount REAL NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
-    cursor.execute("PRAGMA table_info(expenses)")
-    columns = [row[1] for row in cursor.fetchall()]
+    conn.commit()
+    
+    cursor.execute("""
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='expenses'
+    """)
+    columns = [row[0] for row in cursor.fetchall()]
+    
     if 'currency' not in columns:
         logger.info("Добавление поля currency в таблицу expenses")
         cursor.execute("ALTER TABLE expenses ADD COLUMN currency TEXT DEFAULT 'RUB'")
@@ -152,7 +164,6 @@ def init_db():
         cursor.execute("ALTER TABLE expenses ADD COLUMN category TEXT DEFAULT 'другие'")
         conn.commit()
     
-    conn.commit()
     conn.close()
     
     init_user_settings_table()
@@ -164,11 +175,11 @@ def add_expense(amount: float, currency: str = 'RUB', category: str = 'друг�
     
     logger.info(f"Добавление расхода: {amount:.2f} {currency} ({category}) на дату {expense_date}")
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO expenses (date, amount, currency, category)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         """, (expense_date.isoformat(), amount, currency, category))
         conn.commit()
         conn.close()
@@ -178,11 +189,11 @@ def add_expense(amount: float, currency: str = 'RUB', category: str = 'друг�
         raise
 
 def get_expenses_by_date(expense_date: date, user_id: int) -> dict:
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT amount, currency, category FROM expenses
-        WHERE date = ?
+        WHERE date = %s
     """, (expense_date.isoformat(),))
     results = cursor.fetchall()
     conn.close()
@@ -202,12 +213,12 @@ def get_expenses_by_date(expense_date: date, user_id: int) -> dict:
     return totals
 
 def get_monthly_expenses(year: int, month: int, user_id: int) -> dict:
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT amount, currency, category FROM expenses
-        WHERE strftime('%Y', date) = ? AND strftime('%m', date) = ?
-    """, (str(year), f"{month:02d}"))
+        WHERE EXTRACT(YEAR FROM date) = %s AND EXTRACT(MONTH FROM date) = %s
+    """, (year, month))
     results = cursor.fetchall()
     conn.close()
     
@@ -234,12 +245,12 @@ def get_month_total(user_id: int) -> dict:
     return get_monthly_expenses(today.year, today.month, user_id)
 
 def get_user_settings(user_id: int) -> dict:
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT display_currency, usd_to_ars_rate, rub_to_ars_rate
         FROM user_settings
-        WHERE user_id = ?
+        WHERE user_id = %s
     """, (user_id,))
     result = cursor.fetchone()
     conn.close()
@@ -258,30 +269,33 @@ def get_user_settings(user_id: int) -> dict:
         }
 
 def set_display_currency(user_id: int, currency: str):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT OR REPLACE INTO user_settings (user_id, display_currency)
-        VALUES (?, ?)
-    """, (user_id, currency))
+        INSERT INTO user_settings (user_id, display_currency)
+        VALUES (%s, %s)
+        ON CONFLICT (user_id) DO UPDATE SET display_currency = %s
+    """, (user_id, currency, currency))
     conn.commit()
     conn.close()
     logger.info(f"Установлена валюта отображения для пользователя {user_id}: {currency}")
 
 def set_exchange_rate(user_id: int, from_currency: str, to_currency: str, rate: float):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
     
     if from_currency == 'USD' and to_currency == 'ARS':
         cursor.execute("""
-            INSERT OR REPLACE INTO user_settings (user_id, usd_to_ars_rate)
-            VALUES (?, ?)
-        """, (user_id, rate))
+            INSERT INTO user_settings (user_id, usd_to_ars_rate)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET usd_to_ars_rate = %s
+        """, (user_id, rate, rate))
     elif from_currency == 'RUB' and to_currency == 'ARS':
         cursor.execute("""
-            INSERT OR REPLACE INTO user_settings (user_id, rub_to_ars_rate)
-            VALUES (?, ?)
-        """, (user_id, rate))
+            INSERT INTO user_settings (user_id, rub_to_ars_rate)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET rub_to_ars_rate = %s
+        """, (user_id, rate, rate))
     else:
         logger.warning(f"Неподдерживаемый курс: {from_currency} -> {to_currency}")
         conn.close()
