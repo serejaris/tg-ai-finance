@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from config import TELEGRAM_BOT_TOKEN
 from storage import init_db, add_expense, get_today_total, get_month_total
@@ -208,12 +208,22 @@ async def month_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(message)
 
+async def set_bot_commands(application: Application):
+    commands = [
+        BotCommand("start", "Начать работу с ботом"),
+        BotCommand("help", "Показать справку по командам"),
+        BotCommand("today", "Показать расходы за сегодня"),
+        BotCommand("month", "Показать расходы за текущий месяц")
+    ]
+    await application.bot.set_my_commands(commands)
+    logger.info("Меню команд установлено")
+
 def main():
     logger.info("Запуск бота...")
     init_db()
     logger.info("База данных инициализирована")
     
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(set_bot_commands).build()
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
