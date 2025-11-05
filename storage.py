@@ -164,26 +164,31 @@ def init_db():
         cursor.execute("ALTER TABLE expenses ADD COLUMN category TEXT DEFAULT 'другие'")
         conn.commit()
     
+    if 'user_id' not in columns:
+        logger.info("Добавление поля user_id в таблицу expenses")
+        cursor.execute("ALTER TABLE expenses ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    
     conn.close()
     
     init_user_settings_table()
     logger.info("База данных инициализирована успешно")
 
-def add_expense(amount: float, currency: str = 'RUB', category: str = 'другие', expense_date: Optional[date] = None):
+def add_expense(amount: float, currency: str = 'RUB', category: str = 'другие', user_id: int = 0, expense_date: Optional[date] = None):
     if expense_date is None:
         expense_date = date.today()
     
-    logger.info(f"Добавление расхода: {amount:.2f} {currency} ({category}) на дату {expense_date}")
+    logger.info(f"Добавление расхода: {amount:.2f} {currency} ({category}) для пользователя {user_id} на дату {expense_date}")
     try:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO expenses (date, amount, currency, category)
-            VALUES (%s, %s, %s, %s)
-        """, (expense_date.isoformat(), amount, currency, category))
+            INSERT INTO expenses (date, amount, currency, category, user_id)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (expense_date.isoformat(), amount, currency, category, user_id))
         conn.commit()
         conn.close()
-        logger.info(f"Расход {amount:.2f} {currency} ({category}) успешно сохранен")
+        logger.info(f"Расход {amount:.2f} {currency} ({category}) для пользователя {user_id} успешно сохранен")
     except Exception as e:
         logger.error(f"Ошибка при сохранении расхода: {str(e)}", exc_info=True)
         raise
@@ -193,8 +198,8 @@ def get_expenses_by_date(expense_date: date, user_id: int) -> dict:
     cursor = conn.cursor()
     cursor.execute("""
         SELECT amount, currency, category FROM expenses
-        WHERE date = %s
-    """, (expense_date.isoformat(),))
+        WHERE date = %s AND user_id = %s
+    """, (expense_date.isoformat(), user_id))
     results = cursor.fetchall()
     conn.close()
     
@@ -217,8 +222,8 @@ def get_monthly_expenses(year: int, month: int, user_id: int) -> dict:
     cursor = conn.cursor()
     cursor.execute("""
         SELECT amount, currency, category FROM expenses
-        WHERE EXTRACT(YEAR FROM date) = %s AND EXTRACT(MONTH FROM date) = %s
-    """, (year, month))
+        WHERE EXTRACT(YEAR FROM date) = %s AND EXTRACT(MONTH FROM date) = %s AND user_id = %s
+    """, (year, month, user_id))
     results = cursor.fetchall()
     conn.close()
     
