@@ -69,6 +69,35 @@ python bot.py
 python bot.py
 ```
 
+## Запуск с Docker
+
+Для запуска проекта локально с Docker (как на Railway):
+
+1. Убедитесь, что у вас установлены Docker и Docker Compose
+
+2. Создайте файл `.env` в корне проекта:
+```bash
+TELEGRAM_BOT_TOKEN=ваш_токен_бота_от_BotFather
+OPENAI_API_KEY=ваш_ключ_от_OpenAI
+```
+
+3. Запустите проект:
+```bash
+docker-compose up -d
+```
+
+4. Просмотр логов:
+```bash
+docker-compose logs -f bot
+```
+
+5. Остановка проекта:
+```bash
+docker-compose down
+```
+
+**Примечание:** Docker Compose автоматически создаст PostgreSQL базу данных и настроит подключение. Данные базы сохраняются в volume `postgres_data` и не будут потеряны при перезапуске контейнеров.
+
 ## Использование
 
 1. Найдите вашего бота в Telegram и отправьте команду `/start`
