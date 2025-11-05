@@ -17,6 +17,27 @@ def get_currency_name(currency: str) -> str:
     }
     return currency_map.get(currency.upper(), currency.upper())
 
+def format_amount(amount: float) -> str:
+    if amount == int(amount):
+        formatted = str(int(amount))
+    else:
+        formatted = f"{amount:.2f}".rstrip('0').rstrip('.')
+    
+    parts = formatted.split('.')
+    integer_part = parts[0]
+    
+    if len(integer_part) > 3:
+        result = []
+        for i in range(len(integer_part) - 1, -1, -1):
+            result.append(integer_part[i])
+            if (len(integer_part) - i) % 3 == 0 and i > 0:
+                result.append(' ')
+        integer_part = ''.join(reversed(result))
+    
+    if len(parts) > 1:
+        return f"{integer_part}.{parts[1]}"
+    return integer_part
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -237,24 +258,25 @@ async def today_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     display_currency_name = get_currency_name(display_currency)
     
     if totals:
-        lines = ["Расходы за сегодня:"]
+        lines = ["<b>Расходы за сегодня:</b>"]
         category_names = {
-            'еда': 'Еда',
-            'транспорт': 'Транспорт',
-            'развлечения': 'Развлечения',
-            'коммунальные': 'Коммунальные',
-            'одежда': 'Одежда',
-            'здоровье': 'Здоровье',
-            'другие': 'Другие'
+            'еда': '🍔 Еда',
+            'транспорт': '🚗 Транспорт',
+            'развлечения': '🎬 Развлечения',
+            'коммунальные': '🏠 Коммунальные',
+            'одежда': '👕 Одежда',
+            'здоровье': '💊 Здоровье',
+            'другие': '📦 Другие'
         }
         for category, total in sorted(totals.items()):
             cat_name = category_names.get(category, category.capitalize())
-            lines.append(f"{cat_name}: {total:.2f} {display_currency_name}")
+            formatted_amount = format_amount(total)
+            lines.append(f"{cat_name}: {formatted_amount} {display_currency_name}")
         message = "\n".join(lines)
     else:
-        message = f"Расходы за сегодня: 0 {display_currency_name}"
+        message = f"<b>Расходы за сегодня:</b>\n0 {display_currency_name}"
     
-    await update.message.reply_text(message)
+    await update.message.reply_text(message, parse_mode='HTML')
 
 async def month_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -266,24 +288,25 @@ async def month_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     display_currency_name = get_currency_name(display_currency)
     
     if totals:
-        lines = ["Расходы за текущий месяц:"]
+        lines = ["<b>Расходы за текущий месяц:</b>"]
         category_names = {
-            'еда': 'Еда',
-            'транспорт': 'Транспорт',
-            'развлечения': 'Развлечения',
-            'коммунальные': 'Коммунальные',
-            'одежда': 'Одежда',
-            'здоровье': 'Здоровье',
-            'другие': 'Другие'
+            'еда': '🍔 Еда',
+            'транспорт': '🚗 Транспорт',
+            'развлечения': '🎬 Развлечения',
+            'коммунальные': '🏠 Коммунальные',
+            'одежда': '👕 Одежда',
+            'здоровье': '💊 Здоровье',
+            'другие': '📦 Другие'
         }
         for category, total in sorted(totals.items()):
             cat_name = category_names.get(category, category.capitalize())
-            lines.append(f"{cat_name}: {total:.2f} {display_currency_name}")
+            formatted_amount = format_amount(total)
+            lines.append(f"{cat_name}: {formatted_amount} {display_currency_name}")
         message = "\n".join(lines)
     else:
-        message = f"Расходы за текущий месяц: 0 {display_currency_name}"
+        message = f"<b>Расходы за текущий месяц:</b>\n0 {display_currency_name}"
     
-    await update.message.reply_text(message)
+    await update.message.reply_text(message, parse_mode='HTML')
 
 async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -326,7 +349,7 @@ async def expense_confirmation_callback(update: Update, context: ContextTypes.DE
         currency = pending['currency']
         category = pending['category']
         
-        add_expense(amount, currency, category)
+        add_expense(amount, currency, category, user_id)
         today_totals = get_today_total(user_id)
         
         currency_name = get_currency_name(currency)
